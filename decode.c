@@ -27,8 +27,9 @@ typedef struct{
     int valprt[17];
 }HuffmannTable;
 
-
 HuffmannTable dc_table[4];
+HuffmannTable ac_table[4];
+
 
 void init_buffer(int width, int height){
     buffer = malloc(width*height*3);
@@ -46,7 +47,7 @@ void flush_buffer(const char *ppm_path , const char* png_path){
     fprintf(f,"P3\n");
     fprintf(f,"%d %d\n",width,height);
     fprintf(f,"255\n");
-y
+
 
     int z = 0;
     for(int i = 0; i < width * height * 3;i++){
@@ -134,10 +135,14 @@ void parse_dht(){
     uint16_t lenght = read_word();
     uint8_t pf = read_byte();
 
+    uint8_t tc = pf >> 4;
+    uint8_t th = pf & 15;
 
+    assert(tc < 2, "DHT DC or ACE Table deteceted in has");
+    assert(th < 4,"DHT : not exeeed bounts 0...3 " );
 
-
-
+    HuffmannTable* ht = (tc == 0) ? (&dc_table[th]) : (&ac_table[th]);
+    printf("DHT : Reading %s table #%d.\n ",tc == 0  ? "DC" : "AC" , th);
 }
 
 int main(int argc,const char** argv){
@@ -155,12 +160,12 @@ int main(int argc,const char** argv){
     f = fopen(argv[1],"r");
 
     uint16_t marker = read_word();
-    printf("read marker :  %x\n",marker);
+    printf("READ : read marker :  %x\n",marker);
     assert(marker == 0xffd8,"JPEG marker found");
 
     while (1){
         marker = read_word();
-        printf("read marker %x\n",marker);
+        printf("READ : read marker %x\n",marker);
         switch (marker) {
             case 0xFFE0:
                 parse_app0();
