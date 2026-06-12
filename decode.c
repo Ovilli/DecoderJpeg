@@ -1,4 +1,5 @@
 #include "stdio.h"
+#include <endian.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,9 +28,14 @@ typedef struct{
     int valprt[17];
 }HuffmannTable;
 
+typedef struct{
+    int coefficient[64];
+}Block;
+
 HuffmannTable dc_table[4];
 HuffmannTable ac_table[4];
-
+uint8_t bit_buffer = 0;
+uint8_t bits_left = 0;
 
 void init_buffer(int width, int height){
     buffer = malloc(width*height*3);
@@ -143,7 +149,120 @@ void parse_dht(){
 
     HuffmannTable* ht = (tc == 0) ? (&dc_table[th]) : (&ac_table[th]);
     printf("DHT : Reading %s table #%d.\n ",tc == 0  ? "DC" : "AC" , th);
+    int symbol_count = 0;
+    for (int i = 1; i <=16; i++){
+        uint8_t count = read_byte();
+        ht->count[i] = count;
+        symbol_count += count;
+    }
+    printf("DHT : We have %d symbols in %s table %d\n",symbol_count,tc==0? "DC ":"AC ",th);
+    fread(ht->symbols,1,symbol_count,f);
+
+    int code = 0;
+    int p = 0;
+    for (int i = 1; i <= 16; i ++){
+        if(ht->count[i] == 0){
+            ht->mincode[i]=-1;
+            ht->maxcode[i]=-1;
+            ht->valprt[i]=-1;
+        }else {
+            ht->mincode[i] = code;
+            ht->maxcode[i] = code+ ht->count[i] - 1;
+            ht->valprt[i] = p;
+        }
+        p += ht->count[i];
+        code += ht->count[i];
+        code <<= 1;
+        //printf("Huffman Code %d \n",code);
+       // printf("Huffman p %d \n",p);   
+    }
+
 }
+int read_huffman(){
+    if (bits_left == 0){
+        bit_buffer =  read_byte();
+        bits_left = 8;
+    }
+    int value;
+    value = bit_buffer >> 7;
+    bit_buffer <<= 1;
+    bits_left--;
+    return value;
+}
+
+int read_huffman_symbols(HuffmannTable* ht){
+    int code = 0;
+    for(int i = 1; i  <= 16; i++){
+        code <<=1;
+        code += read_huffman();
+            if(code >= ht->mincode[i] && code <= ht->maxcode[i]){
+                int entry = ht->valprt[i];
+                entry += code - ht->mincode[i];
+                return ht->symbols[entry];
+            }
+    }
+}
+int read_n_bits_sign_extend(int n){
+    int cal_value = 0;
+    for(int i = 0; i < n ; i++){
+        uint8_t bit = read_huffman();
+        cal_value <<=1;
+        cal_value += bit;
+    }
+    if(!(cal_value >> (n-1))){
+        cal_value -= (1<<n)-1;
+        return cal_value;
+    }
+}
+
+int read_dc_diff(HuffmannTable* ht){
+    int symbol = read_huffman_symbols(ht);
+    int dc_diff = read_n_bits_sign_extend(symbol);
+    return dc_diff;
+
+}
+
+
+void parse_sos(){
+    uint16_t lenght = read_word();
+    assert(lenght==12, "SOS : segment lenght 12 it is ");
+    uint8_t ns = read_byte();
+    assert(ns==3, "SOS : 3 image Componentents it has");
+    HuffmannTable* use_dc[4];
+    HuffmannTable* use_ac[4];
+    for(int i = 0; i < ns ; i ++){
+        uint8_t cs = read_byte();
+        assert(cs <= 8, "SOS : 0 < cs < 7");
+        uint8_t pf = read_byte();
+        uint8_t dc = pf >> 4;
+        uint8_t ac = pf & 15;
+        use_dc[cs] = &dc_table[dc];
+        use_ac[cs] = &ac_table[ac];
+    }
+    uint8_t ss = read_byte();
+    uint8_t se = read_byte();
+    uint8_t sa = read_byte();
+    assert(ss == 0, "SOS : specturm start at == 0");
+    assert(se==63,"SOS : spectral end == 63");
+    printf("Reading Huffmancodes ... \n");
+
+    // Test to read Huffman
+    //for (int i = 0; i < 16; i++){
+    //    int bit = read_huffman();
+    //    printf("Bit : %d\n",bit);
+    //}
+
+    //int symbol = read_huffman_symbols(&dc_table[0]);
+    //printf("First DC Luma symbols is %d\n",symbol);
+    //printf("First DC : reading somthing %d\n",read_n_bits_sign_extend(symbol));
+
+    int last_dc[4] = {0,0,0,0};
+    int dc_diff = read_dc_diff(use_dc[1]);
+    int dc = last_dc[1]+dc_diff;
+    last_dc[1]=dc;
+
+}
+
 
 int main(int argc,const char** argv){
     start_up();
@@ -178,6 +297,9 @@ int main(int argc,const char** argv){
                 break;
             case 0XFFC4:
                 parse_dht();
+                break;
+            case 0xFFDA:
+                parse_sos();
                 break;
             default:
                 printf("HELP !\n");
