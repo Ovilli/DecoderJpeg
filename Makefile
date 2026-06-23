@@ -14,4 +14,4 @@ clean:
 	rm out.png
 
 run:
-	./decode
+	./decode	44-baseline.jpg

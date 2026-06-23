@@ -36,7 +36,11 @@ HuffmannTable dc_table[4];
 HuffmannTable ac_table[4];
 uint8_t bit_buffer = 0;
 uint8_t bits_left = 0;
+HuffmannTable* use_dc[4];
+HuffmannTable* use_ac[4];
+uint8_t component_qt[4];
 
+int last_dc[4] = {0,0,0,0};
 void init_buffer(int width, int height){
     buffer = malloc(width*height*3);
     memset(buffer, 0, height*height*3);
@@ -228,8 +232,7 @@ void parse_sos(){
     assert(lenght==12, "SOS : segment lenght 12 it is ");
     uint8_t ns = read_byte();
     assert(ns==3, "SOS : 3 image Componentents it has");
-    HuffmannTable* use_dc[4];
-    HuffmannTable* use_ac[4];
+    
     for(int i = 0; i < ns ; i ++){
         uint8_t cs = read_byte();
         assert(cs <= 8, "SOS : 0 < cs < 7");
@@ -256,10 +259,10 @@ void parse_sos(){
     //printf("First DC Luma symbols is %d\n",symbol);
     //printf("First DC : reading somthing %d\n",read_n_bits_sign_extend(symbol));
 
-    int last_dc[4] = {0,0,0,0};
     int dc_diff = read_dc_diff(use_dc[1]);
     int dc = last_dc[1]+dc_diff;
     last_dc[1]=dc;
+    printf("DC coefficient is%d\n",dc);
 
 }
 
